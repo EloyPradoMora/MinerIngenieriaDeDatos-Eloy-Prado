@@ -4,7 +4,9 @@ Miner es una aplicación de línea de comandos (CLI) hecho en Python que identif
 
 ## ¿Qué problema resuelve Miner?
 
-A partir de un archivo CSV con una lista extensa de repositorios (obtenida previamente), Miner consulta la API GraphQL de GitHub para inspeccionar el directorio `.github/workflows/` de cada repositorio. Identifica automáticamente si un repositorio utiliza GH-AW buscando la presencia de archivos `.md` que posean su correspondiente archivo compilado `.lock.yml` (por ejemplo, `report.md` y `report.lock.yml`). Finalmente, Miner genera un nuevo archivo CSV idéntico al de entrada, añadiendo una nueva columna `uses_gh_aw` (`True` o `False`) para indicar si el repositorio hace uso de estas herramientas.
+A partir de un archivo CSV con una lista extensa de repositorios (obtenida previamente), Miner consulta la API GraphQL de GitHub para inspeccionar el directorio `.github/workflows/` de cada repositorio. Identifica automáticamente si un repositorio utiliza GH-AW y genera un nuevo archivo CSV idéntico al de entrada, añadiendo una nueva columna `uses_gh_aw`.
+
+En su **versión extendida (Tarea 3)**, Miner también es capaz de extraer el contenido de los archivos Markdown de esos repositorios identificados. Separa el *frontmatter* YAML del cuerpo del texto, normaliza los datos y los guarda localmente como un dataset relacional en formato **Apache Parquet**.
 
 Miner es **robusto a interrupciones**: guarda su progreso continuamente. Si la ejecución se interrumpe (por apagado del equipo, pérdida de conexión o cierre de terminal), se puede volver a ejecutar el comando y este retomará exactamente donde se quedó, sin perder los avances ni realizar consultas duplicadas a GitHub. Además, utiliza la **API GraphQL de GitHub** con peticiones **asíncronas concurrentes** para extraer los datos de forma extremadamente rápida.
 
@@ -59,17 +61,23 @@ Miner requiere un token de GitHub para consultar la API.
 
 ## 3. Ejecutar Miner
 
-Miner se ejecuta a través de Python, apuntando al paquete `miner`.
+Miner cuenta con comandos diferentes para cada tarea, manteniendo sus funcionalidades separadas.
 
-### Sintaxis
-```bash
-python -m miner ruta/al/archivo/entrada.csv --output ruta/al/archivo/salida.csv
-```
+### Comando 1: Identificación (Tarea 2)
+Sirve para identificar los repositorios GH-AW y generar el nuevo CSV.
 
-### Ejemplo de uso
 ```bash
-python -m miner "results.csv" --output repositorios_ghaw.csv
+python -m miner identify "results (1).csv" --output repositorios_ghaw.csv
 ```
+*(Nota: Por compatibilidad, el comando original sin la palabra "identify" también funciona exactamente igual).*
+
+### Comando 2: Extracción y Generación de Dataset Parquet (Tarea 3)
+A partir del archivo CSV generado en el paso anterior, este comando descargará el texto de los archivos `.md`, procesará su *frontmatter* YAML y exportará las tablas en formato Parquet a la carpeta indicada.
+
+```bash
+python -m miner extract repositorios_ghaw.csv --output-dir dataset_parquet/
+```
+Al finalizar, encontrarás tres archivos `.parquet` en esa carpeta: `repositories.parquet`, `workflows.parquet`, y `workflow_attributes.parquet`.
 
 ### ¿Qué archivo recibe como entrada?
 Recibe un archivo CSV que debe contener, como mínimo, una columna llamada `name` con el identificador del repositorio en el formato `propietario/repositorio` (por ejemplo, `sparklemotion/nokogiri`). Todas las demás columnas del CSV se mantendrán intactas en el archivo de salida.
@@ -78,7 +86,32 @@ Recibe un archivo CSV que debe contener, como mínimo, una columna llamada `name
 Genera un archivo CSV (`repositorios_ghaw.csv` en el ejemplo) que contiene exactamente **todos los repositorios y columnas del archivo de entrada**, pero con **una columna adicional al final llamada `uses_gh_aw`** que contendrá `True` si el repositorio utiliza GH-AW, o `False` en caso contrario.
 
 ### Tolerancia a fallos y reanudación
-Junto a su archivo de entrada, Miner creará automáticamente un archivo de progreso temporal (por ejemplo, `results.csv.progress.jsonl`). Si se corta la luz o se detiene el proceso con `Ctrl+C`, **no se perdera nada**. Para reanudar simplemente vuelva a ejecutar el mismo comando empleado originalmente y Miner reanudará desde el último repositorio procesado. Una vez finalice con todos los repositorios, generará el archivo CSV de salida final.
+Miner creará automáticamente archivos de progreso temporal (`.progress.jsonl` o `extract_progress.txt`). Si se corta la luz, o si te bloquea la API de GitHub por el límite de peticiones (Rate Limit), **no perderás nada**. Simplemente vuelve a ejecutar el mismo comando y Miner reanudará desde el último repositorio procesado.
+
+---
+
+## 4. Documentación del Dataset
+
+En el directorio `docs/` de este proyecto encontrarás:
+- **ER_diagram.md**: El diagrama Entidad-Relación del dataset generado.
+- **data_dictionary.md**: El diccionario de datos explicando qué contiene cada archivo `.parquet` y sus tipos de datos.
+
+---
+
+## 5. Publicar en Hugging Face Datasets
+
+Para subir el dataset generado a Hugging Face, Miner incluye un script auxiliar:
+
+1. Crea un Access Token (con permisos de **Write**) en [Hugging Face Settings](https://huggingface.co/settings/tokens).
+2. Guárdalo en tu archivo `.env` añadiendo la línea:
+   ```env
+   HF_TOKEN=hf_tu_token_aqui
+   ```
+3. Ejecuta el script de subida pasando el nombre del directorio donde se guardaron los `.parquet` y el nombre de tu nuevo repositorio en Hugging Face:
+   ```bash
+   python upload_to_hf.py dataset_parquet/ "tu_usuario_hf/miner_ghaw_dataset"
+   ```
+El script creará automáticamente el repositorio, redactará un `README.md` básico y subirá los 3 archivos Parquet.
 
 ---
 

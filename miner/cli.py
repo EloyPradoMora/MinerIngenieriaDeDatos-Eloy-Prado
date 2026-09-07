@@ -16,6 +16,7 @@ import httpx
 from miner.io import load_progress, save_progress, generate_final_csv
 from miner.github import fetch_workflow_files
 from miner.core import uses_github_agentic_workflows
+from miner.extractor import run_extract_async
 
 app = typer.Typer(help="Miner: Identifies GitHub repositories using GitHub Agentic Workflows.")
 
@@ -92,8 +93,8 @@ async def run_miner_async(input_csv: str, output_csv: str, progress_file: str, t
     generate_final_csv(input_csv, output_csv, progress_file)
     typer.echo(f"¡Listo! Archivo generado en {output_csv}")
 
-@app.command()
-def main(
+@app.command(name="identify")
+def identify(
     input_csv: str = typer.Argument(..., help="Path to the input CSV file containing repositories"),
     output: str = typer.Option(..., "--output", "-o", help="Path to the output CSV file")
 ):
@@ -113,6 +114,30 @@ def main(
     
     try:
         asyncio.run(run_miner_async(input_csv, output, progress_file, token))
+    except KeyboardInterrupt:
+        typer.secho("\nProceso interrumpido por el usuario. El progreso ha sido guardado. Vuelve a ejecutar para reanudar.", fg=typer.colors.YELLOW)
+
+@app.command(name="extract")
+def extract(
+    input_csv: str = typer.Argument(..., help="Path to the input CSV file containing GH-AW repositories"),
+    output_dir: str = typer.Option(..., "--output-dir", "-d", help="Directory to save the generated Parquet files")
+):
+    """
+    Extrae el contenido de los archivos GH-AW y genera un dataset en formato Parquet.
+    """
+    load_dotenv()
+    token = os.environ.get("GITHUB_TOKEN")
+    
+    if not token:
+        typer.secho("Error: GITHUB_TOKEN environment variable not set. Please set it in .env file.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+        
+    if not os.path.exists(input_csv):
+        typer.secho(f"Error: Input file {input_csv} does not exist.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+        
+    try:
+        asyncio.run(run_extract_async(input_csv, output_dir, token))
     except KeyboardInterrupt:
         typer.secho("\nProceso interrumpido por el usuario. El progreso ha sido guardado. Vuelve a ejecutar para reanudar.", fg=typer.colors.YELLOW)
 
