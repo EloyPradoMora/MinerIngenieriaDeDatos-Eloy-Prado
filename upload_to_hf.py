@@ -32,7 +32,7 @@ def main(
         typer.secho(f"Error creando/verificando el repositorio: {e}", fg=typer.colors.RED)
         raise typer.Exit(1)
 
-    archivos = ["repositories.parquet", "workflows.parquet", "workflow_attributes.parquet"]
+    archivos = ["repository.parquet", "markdown.parquet", "lock.parquet"]
     
     for archivo in archivos:
         ruta = os.path.join(dataset_dir, archivo)
@@ -61,11 +61,11 @@ language:
 
 # GitHub Agentic Workflows Dataset
 
-Este dataset contiene información sobre repositorios que utilizan GitHub Agentic Workflows, junto con el contenido extraído de sus archivos Markdown y los metadatos de su frontmatter YAML.
+Este dataset contiene información sobre repositorios que utilizan GitHub Agentic Workflows, junto con el contenido extraído de sus archivos Markdown y los archivos de bloqueo.
 
-- **repositories.parquet**: Lista de repositorios verificados.
-- **workflows.parquet**: Archivos markdown con su contenido.
-- **workflow_attributes.parquet**: Atributos clave-valor extraídos del YAML frontmatter.
+- **repository.parquet**: Lista de repositorios verificados.
+- **markdown.parquet**: Archivos markdown extraídos (con su metadata YAML extraída a `formater`).
+- **lock.parquet**: Contenido crudo de los archivos `.lock.yml`.
 """
     readme_path = os.path.join(dataset_dir, "README.md")
     if not os.path.exists(readme_path):

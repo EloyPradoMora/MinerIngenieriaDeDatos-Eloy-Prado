@@ -33,19 +33,20 @@ def test_generate_parquet(tmp_path):
     # Importar aquí para evitar que se ejecute al importar
     from miner.extractor import generate_parquet
     
-    # Crear un JSONL falso
+    # Crear un JSONL falso para MarkDown
     import json
-    wf_jsonl = str(tmp_path / "tmp_workflows.jsonl")
-    with open(wf_jsonl, "w") as f:
-        f.write(json.dumps({"workflow_id": "owner/repo1/file.md", "repo_id": "owner/repo1", "filename": "file.md", "body": "test"}) + "\n")
+    md_jsonl = str(tmp_path / "tmp_markdown.jsonl")
+    with open(md_jsonl, "w") as f:
+        f.write(json.dumps({"markdown_id": "owner/repo1/file.md", "repo_id": "owner/repo1", "filename": "file.md", "formater": "", "body": "test"}) + "\n")
         
     generate_parquet(str(tmp_path), csv_path)
     
     # Verificar parquets
-    repos_df = pd.read_parquet(str(tmp_path / "repositories.parquet"))
+    repos_df = pd.read_parquet(str(tmp_path / "repository.parquet"))
     assert len(repos_df) == 1 # solo el True
     assert "repo_id" in repos_df.columns
     
-    wf_df = pd.read_parquet(str(tmp_path / "workflows.parquet"))
-    assert len(wf_df) == 1
-    assert wf_df.iloc[0]["workflow_id"] == "owner/repo1/file.md"
+    md_df = pd.read_parquet(str(tmp_path / "markdown.parquet"))
+    assert len(md_df) == 1
+    assert md_df.iloc[0]["markdown_id"] == "owner/repo1/file.md"
+    assert "formater" in md_df.columns

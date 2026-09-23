@@ -50,6 +50,7 @@ async def process_extract_batch(
                 
             # Identify pairs of .md and .lock.yml
             md_files = {}
+            lock_files = {}
             lock_bases = set()
             
             for f in files:
@@ -57,42 +58,50 @@ async def process_extract_batch(
                 if fname.endswith(".md"):
                     md_files[fname[:-3]] = f
                 elif fname.endswith(".lock.yml"):
+                    lock_files[fname[:-9]] = f
                     lock_bases.add(fname[:-9])
                     
             common_bases = set(md_files.keys()).intersection(lock_bases)
             
+            import yaml
+            
             # Extract data
             for base in common_bases:
-                f = md_files[base]
-                filename = f["name"]
-                text = f["text"]
-                workflow_id = f"{repo_name}/{filename}"
+                f_md = md_files[base]
+                f_lock = lock_files[base]
+                
+                filename = f_md["name"]
+                text_md = f_md["text"]
+                lock_text = f_lock["text"]
+                
+                markdown_id = f"{repo_name}/{filename}"
+                lock_id = f"{repo_name}/{base}.lock.yml"
                 
                 try:
-                    parsed = frontmatter.loads(text)
+                    parsed = frontmatter.loads(text_md)
                     body = parsed.content
                     metadata = parsed.metadata
+                    formater = yaml.dump(metadata, allow_unicode=True, default_flow_style=False) if metadata else ""
                 except Exception as e:
                     # If parsing fails, store as raw
-                    body = text
-                    metadata = {}
+                    body = text_md
+                    formater = ""
                     
-                # 1. workflows
-                append_jsonl(os.path.join(out_dir, "tmp_workflows.jsonl"), {
-                    "workflow_id": workflow_id,
+                # 1. markdown
+                append_jsonl(os.path.join(out_dir, "tmp_markdown.jsonl"), {
+                    "markdown_id": markdown_id,
                     "repo_id": repo_name,
                     "filename": filename,
+                    "formater": formater,
                     "body": body
                 })
                 
-                # 2. workflow_attributes
-                if isinstance(metadata, dict):
-                    for k, v in metadata.items():
-                        append_jsonl(os.path.join(out_dir, "tmp_workflow_attributes.jsonl"), {
-                            "workflow_id": workflow_id,
-                            "key": str(k),
-                            "value": str(v)
-                        })
+                # 2. lock
+                append_jsonl(os.path.join(out_dir, "tmp_lock.jsonl"), {
+                    "lock_id": lock_id,
+                    "markdown_id": markdown_id,
+                    "yaml_content": lock_text
+                })
             
             save_extract_progress(progress_file, repo_name)
 
@@ -103,7 +112,7 @@ def generate_parquet(out_dir: str, input_csv: str):
     """Converts the temporary JSONL files and the input CSV to Parquet datasets."""
     typer.echo("Generando tablas Parquet...")
     
-    # 1. Repositories
+    # 1. Repository
     try:
         df_csv = pd.read_csv(input_csv, low_memory=False)
         # Filter only those that use GH-AW
@@ -114,36 +123,40 @@ def generate_parquet(out_dir: str, input_csv: str):
         if "name" in df_csv.columns:
             df_csv.rename(columns={"name": "repo_id"}, inplace=True)
             
-        repo_parquet = os.path.join(out_dir, "repositories.parquet")
+        repo_parquet = os.path.join(out_dir, "repository.parquet")
         df_csv.to_parquet(repo_parquet, index=False)
         typer.echo(f"  - {repo_parquet} creado con {len(df_csv)} filas.")
     except Exception as e:
-        typer.secho(f"Error generando repositories.parquet: {e}", fg=typer.colors.RED)
+        typer.secho(f"Error generando repository.parquet: {e}", fg=typer.colors.RED)
 
-    # 2. Workflows
-    wf_jsonl = os.path.join(out_dir, "tmp_workflows.jsonl")
-    wf_parquet = os.path.join(out_dir, "workflows.parquet")
-    if os.path.exists(wf_jsonl):
+    # 2. MarkDown
+    md_jsonl = os.path.join(out_dir, "tmp_markdown.jsonl")
+    md_parquet = os.path.join(out_dir, "markdown.parquet")
+    if os.path.exists(md_jsonl):
         try:
-            df_wf = pd.read_json(wf_jsonl, lines=True)
-            df_wf.to_parquet(wf_parquet, index=False)
-            typer.echo(f"  - {wf_parquet} creado con {len(df_wf)} filas.")
+            df_md = pd.read_json(md_jsonl, lines=True)
+            df_md.to_parquet(md_parquet, index=False)
+            typer.echo(f"  - {md_parquet} creado con {len(df_md)} filas.")
         except ValueError:
             # If empty
-            pd.DataFrame(columns=["workflow_id", "repo_id", "filename", "body"]).to_parquet(wf_parquet, index=False)
-            typer.echo(f"  - {wf_parquet} creado vacío.")
+            pd.DataFrame(columns=["markdown_id", "repo_id", "filename", "formater", "body"]).to_parquet(md_parquet, index=False)
+            typer.echo(f"  - {md_parquet} creado vacío.")
+    else:
+        pd.DataFrame(columns=["markdown_id", "repo_id", "filename", "formater", "body"]).to_parquet(md_parquet, index=False)
     
-    # 3. Attributes
-    attr_jsonl = os.path.join(out_dir, "tmp_workflow_attributes.jsonl")
-    attr_parquet = os.path.join(out_dir, "workflow_attributes.parquet")
-    if os.path.exists(attr_jsonl):
+    # 3. Lock
+    lock_jsonl = os.path.join(out_dir, "tmp_lock.jsonl")
+    lock_parquet = os.path.join(out_dir, "lock.parquet")
+    if os.path.exists(lock_jsonl):
         try:
-            df_attr = pd.read_json(attr_jsonl, lines=True)
-            df_attr.to_parquet(attr_parquet, index=False)
-            typer.echo(f"  - {attr_parquet} creado con {len(df_attr)} filas.")
+            df_lock = pd.read_json(lock_jsonl, lines=True)
+            df_lock.to_parquet(lock_parquet, index=False)
+            typer.echo(f"  - {lock_parquet} creado con {len(df_lock)} filas.")
         except ValueError:
-            pd.DataFrame(columns=["workflow_id", "key", "value"]).to_parquet(attr_parquet, index=False)
-            typer.echo(f"  - {attr_parquet} creado vacío.")
+            pd.DataFrame(columns=["lock_id", "markdown_id", "yaml_content"]).to_parquet(lock_parquet, index=False)
+            typer.echo(f"  - {lock_parquet} creado vacío.")
+    else:
+        pd.DataFrame(columns=["lock_id", "markdown_id", "yaml_content"]).to_parquet(lock_parquet, index=False)
 
 async def run_extract_async(input_csv: str, out_dir: str, token: str):
     os.makedirs(out_dir, exist_ok=True)
